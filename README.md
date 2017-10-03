@@ -1,0 +1,1 @@
+To run this app enter in your shell `npm i && npm run build` and then run `node index`
