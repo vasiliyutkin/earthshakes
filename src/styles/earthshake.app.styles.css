@@ -5,10 +5,19 @@ body {
     height: 100%;
 }
 
-#map {
-    height: 100%;
+div#map {
+    height: 60%;
+    width: 70%;
+    display: inline-block;
 }
 
-table:hover {
+div#tweet_container {
+    max-height: 60%;
+    width: 29%;
+    display: inline-block;
+    overflow: auto;
+}
+
+table tbody:hover {
     cursor: pointer;
 }

@@ -2,9 +2,10 @@ import "./styles/earthshake.app.styles.css";
 import * as L from "leaflet";
 import "rx-dom";
 
-const map = L.map("map")
-    .setView([33.858631, -118.279602], 7);
+const socket = Rx["DOM"]
+    .fromWebSocket("ws://127.0.0.1:8080");
 
+const map = L.map("map").setView([33.858631, -118.279602], 7);
 L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png').addTo(map);
 
 const makeRow = (props) => {
@@ -37,10 +38,24 @@ const getRowFromEvent = (table, event) => {
         .distinctUntilChanged();
 };
 
-const initialize = () => {
+const makeTweetElement = tweetObj => {
 
-    const Socket = Rx["DOM"].fromWebSocket("ws://127.0.0.1:9000");
-    console.log(Socket);
+    const tweetEl = document.createElement("div");
+    const time = new Date(tweetObj.created_at);
+    const timeText = `${time.toLocaleDateString()} ${time.toLocaleTimeString()}`;
+    const content = `
+        <img src="${tweetObj.user.profile_image_url}" class="avatar" />
+        <div class="content">${tweetObj.text}</div>
+        <div class="time">${timeText}</div>
+    `;
+
+    tweetEl.classList.add("tweet");
+    tweetEl.innerHTML = content;
+
+    return tweetEl;
+};
+
+const initialize = () => {
 
     const quakesTable = document.getElementById("quakes_info");
     const codeLayers = {};
@@ -90,6 +105,32 @@ const initialize = () => {
             const circle = quakeLayer.getLayer(codeLayers[row["id"]]);
             map.panTo(circle.getLatLng());
         });
+
+    quakes.bufferWithCount(100)
+        .map(quakes => {
+
+            return quakes.map(quake => {
+
+                return {
+                    id: quake["properties"].net + quake["properties"].code,
+                    lat: quake["geometry"].coordinates[1],
+                    lng: quake["geometry"].coordinates[0],
+                    mag: quake["properties"].mag
+                };
+            });
+        })
+        .subscribe(quakes => socket.onNext(JSON.stringify({ quakes })));
+
+    socket
+        .map(message => JSON.parse(message.data))
+        .subscribe(tweetObj => {
+
+            const container = document.getElementById("tweet_container");
+            container.insertBefore(makeTweetElement(tweetObj), container.firstChild);
+        });
+
 };
 
-Rx["DOM"].ready().subscribe(initialize);
+Rx["DOM"]
+    .ready()
+    .subscribe(initialize);
