@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" ng-app="com.app.earthquake">
 
 <head>
     <meta charset="UTF-8">
@@ -12,19 +12,54 @@
     <title>Earthshakes Monitoring</title>
 </head>
 
-<body>
+<body ng-controller="com.app.earthquake.mainController as appController">
     <div id="map"></div>
-    <div id="tweet_container"></div>
-    <table class="table table-bordered table-hover">
-        <thead>
-            <tr class="bg-info">
-                <th>Location</th>
-                <th>Magnitude</th>
-                <th>Time</th>
-            </tr>
-        </thead>
-        <tbody id="quakes_info"></tbody>
-    </table>
+    <div class="container" ng-show="appController.tweetList.length || appController.earthquakesList.length">
+        <div>
+            <div class="col-xs-12">
+                <table class="table table-hover" ng-show="appController.earthquakesList.length" ng-cloak>
+                    <thead>
+                        <tr class="bg-warning">
+                            <th>Location</th>
+                            <th>Magnitude</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="quakes_info">
+                        <tr id="{{ earthquake.net + earthquake.code }}" ng-repeat="earthquake in appController.earthquakesList">
+                            <td>{{ earthquake.place }}</td>
+                            <td>{{ earthquake.mag }}</td>
+                            <td>{{ earthquake.time | date }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="row" ng-show="appController.tweetList.length || appController.earthquakesList.length">
+            <div class="col-xs-12">
+                <table class="table table-hover" ng-show="appController.tweetList.length" ng-cloak>
+                    <thead>
+                        <tr class="bg-info">
+                            <th>User</th>
+                            <th>Post Content</th>
+                            <th>Post Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr id="{{ tweet.user.name }}" ng-repeat="tweet in appController.tweetList">
+                            <td>
+                                <img src="{{ tweet.user.profile_image_url }}" />
+                                <span>{{ tweet.user.name | uppercase }}</span>
+                            </td>
+                            <td>{{ tweet.text | lowercase }}</td>
+                            <td>{{ tweet.created_at | date }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <script src="./dist/EarthShakesApp.bundle.js"></script>
 </body>
 

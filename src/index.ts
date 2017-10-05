@@ -1,136 +1,105 @@
 import "./styles/earthshake.app.styles.css";
-import * as L from "leaflet";
 import "rx-dom";
+import * as L from "leaflet";
+import * as angular from "angular";
+import * as E from 'linq';
 
-const socket = Rx["DOM"]
-    .fromWebSocket("ws://127.0.0.1:8080");
+angular.module("com.app.earthquake", [])
+    .controller("com.app.earthquake.mainController", function MainController($scope) {
 
-const map = L.map("map").setView([33.858631, -118.279602], 7);
-L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png').addTo(map);
+        const socket = Rx["DOM"].fromWebSocket("ws://127.0.0.1:8080");
 
-const makeRow = (props) => {
+        this.tweetList = [];
+        this.earthquakesList = [];
 
-    const row = document.createElement("tr");
-    row.id = props.net + props.code;
-    const date = new Date(props.time);
-    const time = date.toString();
+        const quakesTable = document.getElementById("quakes_info");
+        const map = L.map("map").setView([33.858631, -118.279602], 7);
+        const quakeLayer = L.layerGroup([]).addTo(map);
+        L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png').addTo(map);
+        const codeLayers = {};
 
-    [props.place, props.mag, time].forEach(text => {
+        const getRowFromEvent = event => {
 
-        const cell = document.createElement("td");
-        cell.textContent = text;
-        row.appendChild(cell);
-    })
+            return Rx.Observable
+                .fromEvent(quakesTable, event)
+                .filter(event => {
 
-    return row;
-};
+                    const el = event["target"];
+                    return el.tagName === "TD" && el.parentNode.id.length;
+                })
+                .pluck("target")
+                .pluck("parentNode")
+                .distinctUntilChanged();
+        };
 
-const getRowFromEvent = (table, event) => {
+        const quakes = Rx.Observable.interval(5000)
+            .flatMap(() => {
 
-    return Rx.Observable.fromEvent(table, event)
-        .filter(event => {
+                return Rx["DOM"].jsonpRequest({
+                    url: "http://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojsonp",
+                    jsonpCallback: "eqfeed_callback"
+                });
+            })
+            .flatMap(result => Rx.Observable.from(result["response"].features))
+            .distinct(quake => quake["properties"].code)
+            .share();
 
-            const el = event["target"];
-            return el.tagName === "TD" && el.parentNode.id.length;
-        })
-        .pluck("target")
-        .pluck("parentNode")
-        .distinctUntilChanged();
-};
+        quakes.subscribe(quake => {
 
-const makeTweetElement = tweetObj => {
+            const coords = quake["geometry"].coordinates;
+            const size = quake["properties"].mag * 10000;
 
-    const tweetEl = document.createElement("div");
-    const time = new Date(tweetObj.created_at);
-    const timeText = `${time.toLocaleDateString()} ${time.toLocaleTimeString()}`;
-    const content = `
-        <img src="${tweetObj.user.profile_image_url}" class="avatar" />
-        <div class="content">${tweetObj.text}</div>
-        <div class="time">${timeText}</div>
-    `;
+            const circle = L.circle([coords[1], coords[0]], size)
+                .addTo(map);
 
-    tweetEl.classList.add("tweet");
-    tweetEl.innerHTML = content;
-
-    return tweetEl;
-};
-
-const initialize = () => {
-
-    const quakesTable = document.getElementById("quakes_info");
-    const codeLayers = {};
-    const quakeLayer = L.layerGroup([]).addTo(map);
-
-    const quakes = Rx.Observable.interval(5000)
-        .flatMap(() => {
-
-            return Rx["DOM"].jsonpRequest({
-                url: "http://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojsonp",
-                jsonpCallback: "eqfeed_callback"
-            }).retry(3);
-        })
-        .flatMap(result => Rx.Observable.from(result["response"].features))
-        .distinct(quake => quake["properties"].code)
-        .share();
-
-    quakes.subscribe(quake => {
-
-        const coords = quake["geometry"].coordinates;
-        const size = quake["properties"].mag * 10000;
-
-        const circle = L.circle([coords[1], coords[0]], size)
-            .addTo(map);
-
-        quakeLayer.addLayer(circle);
-        codeLayers[quake["id"]] = quakeLayer.getLayerId(circle);
-    });
-
-    quakes.pluck("properties")
-        .map(makeRow)
-        .subscribe(row => quakesTable.appendChild(row));
-
-    getRowFromEvent(quakesTable, "mouseover")
-        .pairwise()
-        .subscribe(rows => {
-
-            const prevCircle = quakeLayer.getLayer(codeLayers[rows[0]["id"]]);
-            const currCircle = quakeLayer.getLayer(codeLayers[rows[1]["id"]]);
-            prevCircle.setStyle({ color: "#0000ff" });
-            currCircle.setStyle({ color: "#ff0000" });
+            quakeLayer.addLayer(circle);
+            codeLayers[quake["id"]] = quakeLayer.getLayerId(circle);
         });
 
-    getRowFromEvent(quakesTable, "click")
-        .subscribe(row => {
+        quakes.pluck("properties")
+            .subscribe(quake => $scope.$apply(() => this.earthquakesList.push(quake)));
 
-            const circle = quakeLayer.getLayer(codeLayers[row["id"]]);
-            map.panTo(circle.getLatLng());
-        });
+        getRowFromEvent("mouseover")
+            .pairwise()
+            .subscribe(rows => {
 
-    quakes.bufferWithCount(100)
-        .map(quakes => {
-
-            return quakes.map(quake => {
-
-                return {
-                    id: quake["properties"].net + quake["properties"].code,
-                    lat: quake["geometry"].coordinates[1],
-                    lng: quake["geometry"].coordinates[0],
-                    mag: quake["properties"].mag
-                };
+                const prevCircle = quakeLayer.getLayer(codeLayers[rows[0]["id"]]);
+                const currCircle = quakeLayer.getLayer(codeLayers[rows[1]["id"]]);
+                prevCircle.setStyle({ color: "#59a27a" });
+                currCircle.setStyle({ color: "#b01055" });
             });
-        })
-        .subscribe(quakes => socket.onNext(JSON.stringify({ quakes })));
 
-    socket
-        .map(message => JSON.parse(message.data))
-        .subscribe(tweetObj => {
+        getRowFromEvent("click")
+            .subscribe(row => {
 
-            const container = document.getElementById("tweet_container");
-            container.insertBefore(makeTweetElement(tweetObj), container.firstChild);
-        });
+                const circle = quakeLayer.getLayer(codeLayers[row["id"]]);
+                map.panTo(circle.getLatLng());
+            });
 
-};
+        quakes
+            .bufferWithCount(100)
+            .map(quakeList => {
 
-Rx["DOM"]
-    .ready()
-    .subscribe(initialize);
+                return quakeList.map(quake => {
+
+                    return {
+                        id: quake["properties"].net + quake["properties"].code,
+                        lat: quake["geometry"].coordinates[1],
+                        lng: quake["geometry"].coordinates[0],
+                        mag: quake["properties"].mag
+                    };
+                });
+            })
+            .subscribe(quakes => socket.onNext(JSON.stringify({ quakes })));
+
+        socket.map(message => JSON.parse(message.data))
+            .subscribe(tweet => {
+
+                $scope.$apply(() => {
+
+                    this.tweetList.push(tweet);
+                    this.tweetList = E.from(this.tweetList)
+                        .distinct(i => i["created_at"]).toArray();
+                });
+            });
+    });
